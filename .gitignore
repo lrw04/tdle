@@ -36,3 +36,6 @@
 
 # Binary
 /build
+
+/t10k*
+/train*

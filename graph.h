@@ -12,7 +12,7 @@ struct graph_t;
 using input_t = std::unordered_map<std::string, tensor_t>;
 
 struct node_t {
-    tensor_t value, adjoint;
+    tensor_t value, adjoint, acc;
     graph_t* graph;
     std::size_t index;
     std::vector<std::size_t> dependencies, successors;
@@ -89,11 +89,15 @@ struct graph_t {
     std::vector<std::size_t> order;
     std::size_t size();
     std::mt19937_64 rng;
+    std::uniform_real_distribution<real> uniform_dist;
     std::normal_distribution<real> normal_dist;
-    void compute_order();
+    void finalize();
     void compute(const input_t& input);
+    std::unordered_map<std::string, node_t*> name_tbl;
     placeholder *add_placeholder(const shape_t& shape, const std::string& name);
     parameter *add_parameter(const shape_t& shape, const std::string& name = "");
 };
 
-void normal_init(node_t *u);
+void normal_init(node_t *u, real coeff = 1);
+
+void zero_init(node_t *u);

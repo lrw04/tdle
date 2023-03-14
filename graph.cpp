@@ -6,7 +6,7 @@
 
 std::size_t graph_t::size() { return nodes.size(); }
 
-void graph_t::compute_order() {
+void graph_t::finalize() {
     order.clear();
     std::queue<std::size_t> q;
     std::vector<std::size_t> deg(size());
@@ -26,36 +26,43 @@ void graph_t::compute_order() {
 }
 
 void graph_t::compute(const input_t& input) {
+    for (std::size_t i = 0; i < nodes.size(); i++) {
+        auto& u = *(nodes[i]);
+        auto size = shape_to_size(u.value.shape);
+        for (std::size_t j = 0; j < size; j++) {
+            u.adjoint.data[j] = 0;
+        }
+    }
     for (auto node : order) nodes[node]->compute(input);
 }
 
 placeholder* graph_t::add_placeholder(const shape_t& shape,
                                       const std::string& name) {
-    auto out = new_tensor(shape);
-    auto adjoint = new_tensor(shape);
     auto u = new placeholder;
-    u->value = out;
-    u->adjoint = adjoint;
+    u->value = new_tensor(shape);
+    u->adjoint = new_tensor(shape);
+    u->acc = new_tensor(shape);
     u->name = name;
     u->index = nodes.size();
     u->graph = this;
     u->parameterp = false;
     nodes.push_back(u);
+    name_tbl[name] = u;
     return u;
 }
 
 parameter* graph_t::add_parameter(const shape_t& shape,
                                   const std::string& name) {
-    auto out = new_tensor(shape);
-    auto adjoint = new_tensor(shape);
     auto u = new parameter;
-    u->value = out;
-    u->adjoint = adjoint;
+    u->value = new_tensor(shape);
+    u->adjoint = new_tensor(shape);
+    u->acc = new_tensor(shape);
     u->name = name;
     u->index = nodes.size();
     u->graph = this;
     u->parameterp = true;
     nodes.push_back(u);
+    name_tbl[name] = u;
     return u;
 }
 
@@ -88,17 +95,17 @@ multiplication* multiply(node_t* a, node_t* b, const std::string& name) {
     a->successors.push_back(i);
     b->successors.push_back(i);
     auto u = new multiplication;
-    shape_t out_shape{a->value.shape[0], b->value.shape[1]};
-    auto out = new_tensor(out_shape);
-    auto adjoint = new_tensor(out_shape);
-    u->value = out;
-    u->adjoint = adjoint;
+    shape_t shape{a->value.shape[0], b->value.shape[1]};
+    u->value = new_tensor(shape);
+    u->adjoint = new_tensor(shape);
+    u->acc = new_tensor(shape);
     u->dependencies = {a->index, b->index};
     u->index = i;
     u->name = name;
     u->graph = a->graph;
     u->parameterp = false;
     u->graph->nodes.push_back(u);
+    u->graph->name_tbl[name] = u;
     return u;
 }
 
@@ -111,16 +118,16 @@ addition* add(node_t* a, node_t* b, const std::string& name) {
     a->successors.push_back(i);
     b->successors.push_back(i);
     auto u = new addition;
-    auto out = new_tensor(a->value.shape);
-    auto adjoint = new_tensor(a->value.shape);
-    u->value = out;
-    u->adjoint = adjoint;
+    u->value = new_tensor(a->value.shape);
+    u->adjoint = new_tensor(a->value.shape);
+    u->acc = new_tensor(a->value.shape);
     u->dependencies = {a->index, b->index};
     u->index = i;
     u->name = name;
     u->graph = a->graph;
     u->parameterp = false;
     u->graph->nodes.push_back(u);
+    u->graph->name_tbl[name] = u;
     return u;
 }
 
@@ -128,16 +135,16 @@ log_node* log_tensor(node_t* a, const std::string& name) {
     auto i = a->graph->nodes.size();
     a->successors.push_back(i);
     auto u = new log_node;
-    auto out = new_tensor(a->value.shape);
-    auto adjoint = new_tensor(a->value.shape);
-    u->value = out;
-    u->adjoint = adjoint;
+    u->value = new_tensor(a->value.shape);
+    u->adjoint = new_tensor(a->value.shape);
+    u->acc = new_tensor(a->value.shape);
     u->dependencies = {a->index};
     u->index = i;
     u->name = name;
     u->graph = a->graph;
     u->parameterp = false;
     u->graph->nodes.push_back(u);
+    u->graph->name_tbl[name] = u;
     return u;
 }
 
@@ -148,16 +155,16 @@ reshape_node* reshape(node_t* a, const shape_t& shape,
     auto i = a->graph->nodes.size();
     a->successors.push_back(i);
     auto u = new reshape_node;
-    auto out = new_tensor(shape);
-    auto adjoint = new_tensor(shape);
-    u->value = out;
-    u->adjoint = adjoint;
+    u->value = new_tensor(shape);
+    u->adjoint = new_tensor(shape);
+    u->acc = new_tensor(shape);
     u->dependencies = {a->index};
     u->index = i;
     u->name = name;
     u->graph = a->graph;
     u->parameterp = false;
     u->graph->nodes.push_back(u);
+    u->graph->name_tbl[name] = u;
     return u;
 }
 
@@ -165,16 +172,16 @@ relu_node* relu(node_t* a, const std::string& name) {
     auto i = a->graph->nodes.size();
     a->successors.push_back(i);
     auto u = new relu_node;
-    auto out = new_tensor(a->value.shape);
-    auto adjoint = new_tensor(a->value.shape);
-    u->value = out;
-    u->adjoint = adjoint;
+    u->value = new_tensor(a->value.shape);
+    u->adjoint = new_tensor(a->value.shape);
+    u->acc = new_tensor(a->value.shape);
     u->dependencies = {a->index};
     u->index = i;
     u->name = name;
     u->graph = a->graph;
     u->parameterp = false;
     u->graph->nodes.push_back(u);
+    u->graph->name_tbl[name] = u;
     return u;
 }
 
@@ -182,16 +189,16 @@ softmax_node* softmax(node_t* a, const std::string& name) {
     auto i = a->graph->nodes.size();
     a->successors.push_back(i);
     auto u = new softmax_node;
-    auto out = new_tensor(a->value.shape);
-    auto adjoint = new_tensor(a->value.shape);
-    u->value = out;
-    u->adjoint = adjoint;
+    u->value = new_tensor(a->value.shape);
+    u->adjoint = new_tensor(a->value.shape);
+    u->acc = new_tensor(a->value.shape);
     u->dependencies = {a->index};
     u->index = i;
     u->name = name;
     u->graph = a->graph;
     u->parameterp = false;
     u->graph->nodes.push_back(u);
+    u->graph->name_tbl[name] = u;
     return u;
 }
 
@@ -199,10 +206,9 @@ scalar_multiplication* multiply(real a, node_t* b, const std::string& name) {
     auto i = b->graph->nodes.size();
     b->successors.push_back(i);
     auto u = new scalar_multiplication;
-    auto out = new_tensor(b->value.shape);
-    auto adjoint = new_tensor(b->value.shape);
-    u->value = out;
-    u->adjoint = adjoint;
+    u->value = new_tensor(b->value.shape);
+    u->adjoint = new_tensor(b->value.shape);
+    u->acc = new_tensor(b->value.shape);
     u->dependencies = {b->index};
     u->index = i;
     u->name = name;
@@ -210,14 +216,21 @@ scalar_multiplication* multiply(real a, node_t* b, const std::string& name) {
     u->parameterp = false;
     u->graph->nodes.push_back(u);
     u->a = a;
+    u->graph->name_tbl[name] = u;
     return u;
 }
 
-void normal_init(node_t* u) {
+void normal_init(node_t* u, real coeff) {
     if (!u->parameterp) PANIC("Initializing non-parameter node {}", u->name);
     auto size = shape_to_size(u->value.shape);
     for (std::size_t i = 0; i < size; i++)
-        u->value.data[i] = u->graph->normal_dist(u->graph->rng);
+        u->value.data[i] = coeff * u->graph->normal_dist(u->graph->rng);
+}
+
+void zero_init(node_t* u) {
+    if (!u->parameterp) PANIC("Initializing non-parameter node {}", u->name);
+    auto size = shape_to_size(u->value.shape);
+    for (std::size_t i = 0; i < size; i++) u->value.data[i] = 0;
 }
 
 void multiplication::compute(const input_t& input) {
@@ -244,7 +257,7 @@ void multiplication::differentiate() {
         for (std::size_t j = 0; j < a.value.shape[1]; j++) {
             for (std::size_t k = 0; k < b.value.shape[1]; k++) {
                 a.adjoint({i, j}) += adjoint({i, k}) * b.value({j, k});
-                b.adjoint({j, k}) += adjoint({i, k}) * a.value({i, j});
+                b.adjoint({j, k}) += a.value({i, j}) * adjoint({i, k});
             }
         }
     }
@@ -278,7 +291,7 @@ void log_node::differentiate() {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
     for (std::size_t i = 0; i < size; i++)
-        a.adjoint.data[i] += 1 / a.value.data[i];
+        a.adjoint.data[i] += adjoint.data[i] / a.value.data[i];
 }
 
 void reshape_node::compute(const input_t& input) {
@@ -310,9 +323,9 @@ void relu_node::differentiate() {
 void softmax_node::compute(const input_t& input) {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
-    real sum = 0;
+    real sum = 0, max = *std::max_element(a.value.data, a.value.data + size);
     for (std::size_t i = 0; i < size; i++)
-        sum += value.data[i] = exp(a.value.data[i]);
+        sum += value.data[i] = exp(a.value.data[i] - max);
     for (std::size_t i = 0; i < size; i++) value.data[i] /= sum;
 }
 
