@@ -30,7 +30,7 @@ std::vector<tensor_t> read_mnist_image(const std::string& fn) {
         auto start = 16 + i * 28 * 28;
         auto v = new_tensor({28 * 28, 1});
         for (std::size_t j = 0; j < 28 * 28; j++)
-            v({j, 0}) = contents[start + j] / (real)256;
+            v.data[j] = contents[start + j] / (real)256;
         out.push_back(v);
     }
     return out;
@@ -44,8 +44,8 @@ std::vector<tensor_t> read_mnist_label(const std::string& fn) {
     for (std::size_t i = 0; i < size; i++) {
         auto start = 8 + i;
         auto v = new_tensor({10, 1});
-        for (std::size_t j = 0; j < 10; j++) v({j, 0}) = 0;
-        v({(std::size_t)contents[start], 0}) = 1;
+        for (std::size_t j = 0; j < 10; j++) v.data[j] = 0;
+        v.data[contents[start]] = 1;
         out.push_back(v);
     }
     return out;
@@ -61,7 +61,7 @@ void print_image(std::ostream& st, tensor_t t) {
 }
 
 int main() {
-    const int l1 = 28 * 28, l2 = 50, l3 = 20, l4 = 10;
+    const int l1 = 28 * 28, l2 = 300, l3 = 100, l4 = 10;
     graph_t g;
     g.rng.seed(23809713);
     auto x = g.add_placeholder({l1, 1}, "x");

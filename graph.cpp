@@ -236,15 +236,21 @@ void zero_init(node_t* u) {
 void multiplication::compute(const input_t& input) {
     node_t& a = *(graph->nodes[dependencies[0]]);
     node_t& b = *(graph->nodes[dependencies[1]]);
-    for (std::size_t i = 0; i < value.shape[0]; i++) {
-        for (std::size_t j = 0; j < value.shape[1]; j++) {
-            value({i, j}) = 0;
+    auto n = a.value.shape[0];
+    auto m = a.value.shape[1];
+    auto l = b.value.shape[1];
+    for (std::size_t i = 0; i < n; i++) {
+        for (std::size_t j = 0; j < l; j++) {
+            value.data[i * l + j] = 0;
         }
     }
-    for (std::size_t i = 0; i < a.value.shape[0]; i++) {
-        for (std::size_t j = 0; j < a.value.shape[1]; j++) {
-            for (std::size_t k = 0; k < b.value.shape[1]; k++) {
-                value({i, k}) += a.value({i, j}) * b.value({j, k});
+    for (std::size_t i = 0; i < n; i++) {
+        auto il = i * l, im = i * m;
+        for (std::size_t j = 0; j < m; j++) {
+            auto jl = j * l;
+            auto t = a.value.data[im + j];
+            for (std::size_t k = 0; k < l; k++) {
+                value.data[il + k] += t * b.value.data[jl + k];
             }
         }
     }
@@ -253,11 +259,16 @@ void multiplication::compute(const input_t& input) {
 void multiplication::differentiate() {
     node_t& a = *(graph->nodes[dependencies[0]]);
     node_t& b = *(graph->nodes[dependencies[1]]);
-    for (std::size_t i = 0; i < a.value.shape[0]; i++) {
-        for (std::size_t j = 0; j < a.value.shape[1]; j++) {
-            for (std::size_t k = 0; k < b.value.shape[1]; k++) {
-                a.adjoint({i, j}) += adjoint({i, k}) * b.value({j, k});
-                b.adjoint({j, k}) += a.value({i, j}) * adjoint({i, k});
+    auto n = a.value.shape[0];
+    auto m = a.value.shape[1];
+    auto l = b.value.shape[1];
+    for (std::size_t i = 0; i < n; i++) {
+        auto im = i * m, il = i * l;
+        for (std::size_t j = 0; j < m; j++) {
+            auto jl = j * l;
+            for (std::size_t k = 0; k < l; k++) {
+                a.adjoint.data[im + j] += adjoint.data[il + k] * b.value.data[jl + k];
+                b.adjoint.data[jl + k] += a.value.data[im + j] * adjoint.data[il + k];
             }
         }
     }
