@@ -266,9 +266,10 @@ void multiplication::differentiate() {
         auto im = i * m, il = i * l;
         for (std::size_t j = 0; j < m; j++) {
             auto jl = j * l;
+            auto t = a.value.data[im + j];
             for (std::size_t k = 0; k < l; k++) {
                 a.adjoint.data[im + j] += adjoint.data[il + k] * b.value.data[jl + k];
-                b.adjoint.data[jl + k] += a.value.data[im + j] * adjoint.data[il + k];
+                b.adjoint.data[jl + k] += t * adjoint.data[il + k];
             }
         }
     }

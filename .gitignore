@@ -37,5 +37,9 @@
 # Binary
 /build
 
+# MNIST original data in my tree
 /t10k*
 /train*
+
+# Saved parameters
+/*.tsr

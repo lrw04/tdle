@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 
 #include "control_flow.h"
 #include "graph.h"
@@ -60,6 +61,30 @@ void print_image(std::ostream& st, tensor_t t) {
     }
 }
 
+tensor_t read_tensor(const std::string& fn) {
+    std::ifstream st(fn);
+    shape_t shape;
+    while (true) {
+        std::size_t x;
+        st >> x;
+        if (!x) break;
+        shape.push_back(x);
+    }
+    auto size = shape_to_size(shape);
+    auto ret = new_tensor(shape);
+    for (std::size_t i = 0; i < size; i++) st >> ret.data[i];
+    return ret;
+}
+
+void write_tensor(const std::string& fn, tensor_t tensor) {
+    std::ofstream st(fn);
+    for (auto s : tensor.shape) st << s << " ";
+    st << "\n";
+    auto size = shape_to_size(tensor.shape);
+    for (std::size_t i = 0; i < size; i++) st << tensor.data[i] << " ";
+    st << "\n";
+}
+
 int main() {
     const int l1 = 28 * 28, l2 = 300, l3 = 100, l4 = 10;
     graph_t g;
@@ -97,7 +122,7 @@ int main() {
     auto training_labels = read_mnist_label("train-labels.idx1-ubyte");
     auto test_images = read_mnist_image("t10k-images.idx3-ubyte");
     auto test_labels = read_mnist_label("t10k-labels.idx1-ubyte");
-    spdlog::info("Read MNIST data");
+    spdlog::info("Read MNIST data successfully");
 
     std::vector<input_t> training_set;
     for (int i = 0; i < training_images.size(); i++) {
@@ -118,7 +143,7 @@ int main() {
     int t = 0;
     while (true) {
         t++;
-        spdlog::info("Starting sgd iteration {}", t);
+        spdlog::info("Starting SGD iteration {}", t);
         real rate = 0.001;
         sgd_iter(&g, training_set, rate, (real)0.01);
         // spdlog::info("iteration ended");
@@ -126,7 +151,7 @@ int main() {
         int correct = 0, selected = 0;
         real sum = 0;
         for (int i = 0; i < test_images.size(); i++) {
-            if (g.uniform_dist(g.rng) > 0.01) continue;
+            if (g.uniform_dist(g.rng) > (t % 100 ? 0.01 : 1)) continue;
             selected++;
             input_t input;
             input["x"] = test_images[i];
@@ -146,7 +171,15 @@ int main() {
             }
         }
         std::cout << std::endl;
-        spdlog::info("{} correct out of {}, average loss {}", correct, selected,
-                     sum / selected);
+        spdlog::info("{} correct out of {} ({}%), average loss {}", correct,
+                     selected, correct * 100 / selected, sum / selected);
+        if (t % 10000 == 0) {
+            for (auto u : g.nodes) {
+                if (!u->parameterp) continue;
+                auto name = std::string("epoch_") + std::to_string(t) + "-" +
+                            u->name + ".tsr";
+                write_tensor(name, u->value);
+            }
+        }
     }
 }
