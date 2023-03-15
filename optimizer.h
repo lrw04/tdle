@@ -7,7 +7,7 @@
 #include "config.h"
 #include "graph.h"
 
-// TODO: SGD, Adam
+// TODO: Adam
 
 void sgd_iter(
     graph_t *graph,
