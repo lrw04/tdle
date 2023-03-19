@@ -1,5 +1,7 @@
 #include "graph.h"
 
+#include <algorithm>
+#include <execution>
 #include <queue>
 
 #include "control_flow.h"
@@ -73,7 +75,8 @@ void placeholder::compute(const input_t& input) {
         PANIC("Input for placeholder node {} has a wrong shape", name);
     auto in = input.find(name)->second;
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++) value.data[i] = in.data[i];
+    std::copy(std::execution::par_unseq, in.data, in.data + size, value.data);
+    // for (std::size_t i = 0; i < size; i++) value.data[i] = in.data[i];
 }
 
 void placeholder::differentiate() {}
@@ -233,27 +236,31 @@ void zero_init(node_t* u) {
     for (std::size_t i = 0; i < size; i++) u->value.data[i] = 0;
 }
 
+void zero_init(tensor_t u) {
+    auto size = shape_to_size(u.shape);
+    for (std::size_t i = 0; i < size; i++) u.data[i] = 0;
+}
+
 void multiplication::compute(const input_t& input) {
     node_t& a = *(graph->nodes[dependencies[0]]);
     node_t& b = *(graph->nodes[dependencies[1]]);
     auto n = a.value.shape[0];
     auto m = a.value.shape[1];
     auto l = b.value.shape[1];
-    for (std::size_t i = 0; i < n; i++) {
-        for (std::size_t j = 0; j < l; j++) {
-            value.data[i * l + j] = 0;
-        }
-    }
-    for (std::size_t i = 0; i < n; i++) {
-        auto il = i * l, im = i * m;
-        for (std::size_t j = 0; j < m; j++) {
-            auto jl = j * l;
-            auto t = a.value.data[im + j];
-            for (std::size_t k = 0; k < l; k++) {
-                value.data[il + k] += t * b.value.data[jl + k];
-            }
-        }
-    }
+    std::fill(std::execution::par_unseq, value.data, value.data + n * l, 0);
+    std::vector<std::size_t> is(n);
+    for (std::size_t i = 0; i < n; i++) is[i] = i;
+    std::for_each(std::execution::par_unseq, is.begin(), is.end(),
+                  [&](std::size_t i) {
+                      auto il = i * l, im = i * m;
+                      for (std::size_t j = 0; j < m; j++) {
+                          auto jl = j * l;
+                          auto t = a.value.data[im + j];
+                          for (std::size_t k = 0; k < l; k++) {
+                              value.data[il + k] += t * b.value.data[jl + k];
+                          }
+                      }
+                  });
 }
 
 void multiplication::differentiate() {
@@ -262,83 +269,106 @@ void multiplication::differentiate() {
     auto n = a.value.shape[0];
     auto m = a.value.shape[1];
     auto l = b.value.shape[1];
-    for (std::size_t i = 0; i < n; i++) {
-        auto im = i * m, il = i * l;
-        for (std::size_t j = 0; j < m; j++) {
-            auto jl = j * l;
-            auto t = a.value.data[im + j];
-            for (std::size_t k = 0; k < l; k++) {
-                a.adjoint.data[im + j] += adjoint.data[il + k] * b.value.data[jl + k];
-                b.adjoint.data[jl + k] += t * adjoint.data[il + k];
+    std::vector<std::size_t> is(n);
+    for (std::size_t i = 0; i < n; i++) is[i] = i;
+    std::for_each(
+        std::execution::par_unseq, is.begin(), is.end(), [&](std::size_t i) {
+            auto im = i * m, il = i * l;
+            for (std::size_t j = 0; j < m; j++) {
+                auto jl = j * l;
+                auto t = a.value.data[im + j];
+                for (std::size_t k = 0; k < l; k++) {
+                    a.adjoint.data[im + j] +=
+                        adjoint.data[il + k] * b.value.data[jl + k];
+                    b.adjoint.data[jl + k] += t * adjoint.data[il + k];
+                }
             }
-        }
-    }
+        });
 }
 
 void addition::compute(const input_t& input) {
     node_t& a = *(graph->nodes[dependencies[0]]);
     node_t& b = *(graph->nodes[dependencies[1]]);
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++)
-        value.data[i] = a.value.data[i] + b.value.data[i];
+    std::for_each(std::execution::par_unseq, value.data, value.data + size,
+                  [&](real& p) {
+                      auto i = &p - value.data;
+                      p = a.value.data[i] + b.value.data[i];
+                  });
 }
 
 void addition::differentiate() {
     node_t& a = *(graph->nodes[dependencies[0]]);
     node_t& b = *(graph->nodes[dependencies[1]]);
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++) {
-        a.adjoint.data[i] += adjoint.data[i];
-        b.adjoint.data[i] += adjoint.data[i];
-    }
+    std::for_each(std::execution::par_unseq, adjoint.data, adjoint.data + size,
+                  [&](real& p) {
+                      auto i = &p - adjoint.data;
+                      a.adjoint.data[i] += p;
+                      b.adjoint.data[i] += p;
+                  });
 }
 
 void log_node::compute(const input_t& input) {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++) value.data[i] = log(a.value.data[i]);
+    std::for_each(std::execution::par_unseq, a.value.data, a.value.data + size,
+                  [&](real& p) { value.data[&p - a.value.data] = log(p); });
 }
 
 void log_node::differentiate() {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++)
-        a.adjoint.data[i] += adjoint.data[i] / a.value.data[i];
+    std::for_each(std::execution::par_unseq, a.adjoint.data,
+                  a.adjoint.data + size, [&](real& p) {
+                      auto i = &p - a.adjoint.data;
+                      p += adjoint.data[i] / a.value.data[i];
+                  });
 }
 
 void reshape_node::compute(const input_t& input) {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++) value.data[i] = a.value.data[i];
+    std::copy(std::execution::par_unseq, a.value.data, a.value.data + size,
+              value.data);
 }
 
 void reshape_node::differentiate() {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++) a.adjoint.data[i] += adjoint.data[i];
+    std::for_each(std::execution::par_unseq, a.adjoint.data,
+                  a.adjoint.data + size,
+                  [&](real& p) { p += adjoint.data[&p - a.adjoint.data]; });
 }
 
 void relu_node::compute(const input_t& input) {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++)
-        value.data[i] = std::max((real)0, a.value.data[i]);
+    std::transform(std::execution::par_unseq, a.value.data, a.value.data + size,
+                   value.data, [](real x) { return std::max((real)0, x); });
 }
 
 void relu_node::differentiate() {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
-    for (std::size_t i = 0; i < size; i++)
-        a.adjoint.data[i] += a.value.data[i] > 0 ? adjoint.data[i] : 0;
+    std::for_each(std::execution::par_unseq, a.adjoint.data,
+                  a.adjoint.data + size, [&](real& p) {
+                      auto i = &p - a.adjoint.data;
+                      p += a.value.data[i] > 0 ? adjoint.data[i] : 0;
+                  });
 }
 
 void softmax_node::compute(const input_t& input) {
     node_t& a = *(graph->nodes[dependencies[0]]);
     auto size = shape_to_size(value.shape);
-    real sum = 0, max = *std::max_element(a.value.data, a.value.data + size);
-    for (std::size_t i = 0; i < size; i++)
-        sum += value.data[i] = exp(a.value.data[i] - max);
-    for (std::size_t i = 0; i < size; i++) value.data[i] /= sum;
+    auto max = *std::max_element(std::execution::par_unseq, a.value.data,
+                                 a.value.data + size);
+    std::transform(std::execution::par_unseq, a.value.data, a.value.data + size,
+                   value.data, [&](real x) { return exp(x - max); });
+    auto sum =
+        std::reduce(std::execution::par_unseq, value.data, value.data + size);
+    std::transform(std::execution::par_unseq, value.data, value.data + size,
+                   value.data, [sum](real x) { return x / sum; });
 }
 
 void softmax_node::differentiate() {
