@@ -141,14 +141,26 @@ int main() {
     }
 
     int t = 0;
+    adam optimizer(&g);
     while (true) {
         t++;
-        spdlog::info("Starting SGD iteration {}", t);
+        spdlog::info("Starting Adam iteration {}", t);
         real rate = 0.001;
-        sgd_iter(&g, training_set, rate, (real)0.01);
-        // spdlog::info("iteration ended");
+        const std::size_t batch_size = 64;
+        for (std::size_t i = 0; i < batch_size; i++) {
+            swap(training_set[i],
+                 training_set[i + (std::size_t)(g.uniform_dist(g.rng) *
+                                      (training_set.size() - i))]);
+        }
+        std::vector<input_t> batch(batch_size);
+        for (std::size_t i = 0; i < batch_size; i++) {
+            batch[i] = training_set[i];
+        }
+        optimizer.iter(t, batch, rate);
+            // spdlog::info("iteration ended");
 
-        int correct = 0, selected = 0;
+            int correct = 0,
+                selected = 0;
         real sum = 0;
         for (int i = 0; i < test_images.size(); i++) {
             if (g.uniform_dist(g.rng) > (t % 100 ? 0.01 : 1)) continue;

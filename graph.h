@@ -101,3 +101,5 @@ struct graph_t {
 void normal_init(node_t *u, real coeff = 1);
 
 void zero_init(node_t *u);
+
+void zero_init(tensor_t u);
