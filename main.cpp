@@ -79,14 +79,14 @@ tensor_t read_tensor(const std::string& fn) {
 void write_tensor(const std::string& fn, tensor_t tensor) {
     std::ofstream st(fn);
     for (auto s : tensor.shape) st << s << " ";
-    st << "\n";
+    st << "0\n";
     auto size = shape_to_size(tensor.shape);
     for (std::size_t i = 0; i < size; i++) st << tensor.data[i] << " ";
     st << "\n";
 }
 
 int main() {
-    const int l1 = 28 * 28, l2 = 300, l3 = 100, l4 = 10;
+    const int l1 = 28 * 28, l2 = 500, l3 = 150, l4 = 10;
     graph_t g;
     g.rng.seed(23809713);
     auto x = g.add_placeholder({l1, 1}, "x");
@@ -176,13 +176,13 @@ int main() {
             if (std::max_element(p, p + 10) - p ==
                 std::max_element(pp, pp + 10) - pp) {
                 correct++;
-                std::cout << std::max_element(p, p + 10) - p;
+                // std::cout << std::max_element(p, p + 10) - p;
                 // spdlog::info("{} correct out of {}", correct, selected);
             } else {
-                std::cout << "x";
+                // std::cout << "x";
             }
         }
-        std::cout << std::endl;
+        // std::cout << std::endl;
         spdlog::info("{} correct out of {} ({}%), average loss {}", correct,
                      selected, correct * 100 / selected, sum / selected);
         if (t % 10000 == 0) {
